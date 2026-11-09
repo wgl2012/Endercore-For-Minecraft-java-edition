@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "endercore",
+  "version": "2.0.0",
+  "name": "EnderCore",
+  "description": "EnderCore 智能控制系统模组端 - 提供游戏数据 API",
+  "authors": ["双赦"],
+  "contact": {
+    "homepage": "https://v.douyin.com/ISx8vyE/"
+  },
+  "license": "MIT",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "com.endercore.EnderCoreMod"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.15.0",
+    "fabric": "*",
+    "minecraft": "1.20.4"
+  }
+}

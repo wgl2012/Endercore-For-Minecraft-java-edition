@@ -1,0 +1,12 @@
+GIT/
+__pycache__/
+mod/build/
+mod/run/
+mod/.gradle/
+mod/.idea/
+mod/_removed_old_files/
+*.log
+*.pyc
+gradle-9.6.0-bin/
+gradle-9.6.0-bin.zip
+legacy_yolo_backup/

@@ -14,8 +14,15 @@ import java.nio.file.Path;
 public class Config {
     public static class Data {
         public int http_port = 25599;
+        public int ws_port = 25600;
         public String http_host = "127.0.0.1";
         public int state_tick_ms = 500;
+
+        // LLM 配置（由 Python 控制端从 mod 读取，本地不再维护 config.json）
+        public String llm_base_url = "https://api.ginka.cloud/v1";
+        public String llm_api_key = "";
+        public String llm_model = "deepseek-v4-flash";
+        public double llm_decision_interval_sec = 2.5;
     }
 
     private static Data data = new Data();

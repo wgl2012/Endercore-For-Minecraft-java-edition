@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "id": "endercore",
-  "version": "2.0.0",
+  "version": "3.2.1",
   "name": "EnderCore",
   "description": "EnderCore 智能控制系统模组端 - 提供游戏数据 API",
   "authors": ["双赦"],
@@ -15,6 +15,9 @@
       "com.endercore.EnderCoreMod"
     ]
   },
+  "mixins": [
+    "endercore.mixins.json"
+  ],
   "depends": {
     "fabricloader": ">=0.15.0",
     "fabric": "*",

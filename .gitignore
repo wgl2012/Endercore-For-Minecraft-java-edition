@@ -12,3 +12,20 @@ gradle-9.6.0-bin.zip
 legacy_yolo_backup/
 提交/
 config.json.bak
+
+# 诊断/一次性脚本（本地保留，不入库）
+test_*.py
+_ai_smoke.py
+build_cube.py
+build_cuboid.py
+fix_bridge.py
+
+# 本地运行/构建日志
+run_log.txt
+mod/build_log*.txt
+mod/run_client_log*.txt
+
+# 发布产物与 Gradle 分发包缓存
+releases/
+gradle-9.6.0-bin/
+gradle-9.6.0-bin.zip

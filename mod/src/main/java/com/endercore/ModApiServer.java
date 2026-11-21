@@ -81,9 +81,30 @@ public class ModApiServer {
             try {
                 String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
                 JsonObject req = JsonParser.parseString(body).getAsJsonObject();
-                if (req.has("thought")) AiHud.setThought(req.get("thought").getAsString());
+                if (req.has("thought")) {
+                    String t = req.get("thought").getAsString();
+                    if (!t.isEmpty()) AiHud.sendChat("§b[EnderCore]§7 思考: " + t);
+                }
                 if (req.has("action")) AiHud.setAction(req.get("action").getAsString());
                 if (req.has("status")) AiHud.setStatus(req.get("status").getAsString());
+                if (req.has("balance")) AiHud.setBalance(req.get("balance").getAsString());
+            } catch (Exception e) {
+                respond(exchange, 400, "{\"error\":\"bad request\"}");
+                return;
+            }
+            respond(exchange, 200, "{\"success\":true}");
+        });
+
+        // 推送消息到游戏内聊天框（HTTP 兜底）
+        server.createContext("/api/chat", exchange -> {
+            if (!"POST".equals(exchange.getRequestMethod())) {
+                respond(exchange, 405, "{\"error\":\"method not allowed\"}");
+                return;
+            }
+            try {
+                String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+                JsonObject req = JsonParser.parseString(body).getAsJsonObject();
+                if (req.has("message")) AiHud.sendChat(req.get("message").getAsString());
             } catch (Exception e) {
                 respond(exchange, 400, "{\"error\":\"bad request\"}");
                 return;

@@ -29,6 +29,7 @@ public final class PlayerController {
     private static boolean swimUp = false;
     private static boolean pillarMode = false;
     private static boolean bridgeMode = false;
+    private static boolean flyMode = false;
     private static int pillarTargetY = -1;
     private static float bridgeYaw = 0;
     private static double pillarBaseY = 0;
@@ -128,6 +129,11 @@ public final class PlayerController {
                 swimUp = false;
                 mc.options.jumpKey.setPressed(false);
             }
+        }
+
+        // ---- 飞行模式：空格持续上升（创造模式脱困/越障），下降由 LLM 发 sneak ----
+        if (flyMode && !pillarMode) {
+            mc.options.jumpKey.setPressed(true);
         }
 
 
@@ -239,6 +245,13 @@ public final class PlayerController {
     }
 
     public static void startBridge() { bridgeMode = true; targetX = null; targetZ = null; MinecraftClient m = MinecraftClient.getInstance(); if (m.player != null) bridgeYaw = m.player.getYaw() + 180f; }
+    public static void setFlyMode(boolean on) {
+        flyMode = on;
+        if (!on) {
+            MinecraftClient mc = MinecraftClient.getInstance();
+            if (mc.options != null) mc.options.jumpKey.setPressed(false);
+        }
+    }
     public static void startFollow(int entityId) { followEntityId = entityId; roughMode = true; }
     public static void startPillar(Integer targetY) { pillarMode = true; pillarTicks = 0; pillarTargetY = targetY != null ? targetY : -1; pillarSupport = null; MinecraftClient mc = MinecraftClient.getInstance(); if (mc.player != null) pillarBaseY = mc.player.getY(); }
     public static void moveTowards(double x, double z) { moveTowards(x, z, false); }
@@ -259,6 +272,7 @@ public final class PlayerController {
         targetX = null;
         targetZ = null;
         swimUp = false;
+        flyMode = false;
         stopMining(mc);
         if (mc.options != null) {
             mc.options.forwardKey.setPressed(false);

@@ -40,7 +40,7 @@ echo.
 echo [3/3] 编译完成！
 echo.
 echo 模组文件位置:
-echo   %~dp0mod\build\libs\endercore-2.0.0.jar
+echo   %~dp0mod\build\libs\endercore-3.2.1.jar
 echo.
 echo 使用方法:
 echo   把这个 jar 文件复制到 .minecraft\mods\ 文件夹

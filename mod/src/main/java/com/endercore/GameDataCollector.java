@@ -6,10 +6,12 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.mob.HostileEntity;
+import net.minecraft.entity.passive.VillagerEntity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.player.PlayerInventory;
 import net.minecraft.item.ItemStack;
 import net.minecraft.registry.Registries;
+import net.minecraft.screen.slot.Slot;
 import net.minecraft.block.BlockState;
 import net.minecraft.util.Hand;
 import net.minecraft.util.Identifier;
@@ -19,6 +21,9 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Vec3d;
+import net.minecraft.nbt.NbtCompound;
+import net.minecraft.state.property.Properties;
+import net.minecraft.village.VillagerProfession;
 import net.minecraft.world.RaycastContext;
 
 import java.util.HashMap;
@@ -128,11 +133,34 @@ public class GameDataCollector {
         playerJson.addProperty("air", player.getAir());
         playerJson.addProperty("max_air", player.getMaxAir());
         playerJson.addProperty("in_water", player.isSubmergedInWater());
+        playerJson.addProperty("on_ground", player.isOnGround());
+        Vec3d pv = player.getVelocity();
+        playerJson.addProperty("vx", Math.round(pv.x * 100) / 100.0);
+        playerJson.addProperty("vy", Math.round(pv.y * 100) / 100.0);
+        playerJson.addProperty("vz", Math.round(pv.z * 100) / 100.0);
+        ItemStack offhand = player.getOffHandStack();
+        if (!offhand.isEmpty()) {
+            JsonObject off = new JsonObject();
+            off.addProperty("id", Registries.ITEM.getId(offhand.getItem()).toString());
+            off.addProperty("count", offhand.getCount());
+            playerJson.add("offhand", off);
+        }
         playerJson.addProperty("game_mode", gameModeName(mc));
+        playerJson.addProperty("flying", player.getAbilities().flying);
+        playerJson.addProperty("allow_flying", player.getAbilities().allowFlying);
         state.add("player", playerJson);
 
         // 游戏内输入的 AI 目标
         if (AiHud.goal != null && !AiHud.goal.isEmpty()) state.addProperty("goal", AiHud.goal);
+
+        // 下发给 Python 控制端的 LLM 配置（配置统一在 mod 端维护）
+        Config.Data cfg = Config.get();
+        JsonObject llmCfg = new JsonObject();
+        llmCfg.addProperty("llm_base_url", cfg.llm_base_url);
+        llmCfg.addProperty("llm_api_key", cfg.llm_api_key);
+        llmCfg.addProperty("llm_model", cfg.llm_model);
+        llmCfg.addProperty("llm_decision_interval_sec", cfg.llm_decision_interval_sec);
+        state.add("config", llmCfg);
         // 闄勮繎鐢熺墿
         JsonArray mobs = new JsonArray();
         for (Entity entity : mc.world.getEntities()) {
@@ -143,14 +171,41 @@ public class GameDataCollector {
             // 生物数据始终同步，不限制距离（只遍历已加载实体）
 
             JsonObject mob = new JsonObject();
+            String typeName = entity.getType().toString();
             mob.addProperty("id", entity.getId());
-            mob.addProperty("name", entity.getType().toString());
+            mob.addProperty("name", typeName);
             mob.addProperty("x", entity.getX());
             mob.addProperty("y", entity.getY());
             mob.addProperty("z", entity.getZ());
             mob.addProperty("distance", Math.round(dist * 100) / 100.0);
-            mob.addProperty("hostile", entity instanceof HostileEntity);
+            // 视觉可见性（类自动驾驶 LOS 检测）：眼睛到眼睛射线，命中实心方块即被遮挡
+            String blocker = (dist <= 16.0) ? lineOfSightBlocker(mc, player, entity) : null;
+            mob.addProperty("visible", blocker == null);
+            mob.addProperty("blocked", blocker != null);
+            if (blocker != null) mob.addProperty("blocker", blocker);
+            boolean hostile = entity instanceof HostileEntity;
+            mob.addProperty("hostile", hostile);
+            String category;
+            boolean interactable;
+            String lower = typeName.toLowerCase();
+            if (hostile) { category = "hostile"; interactable = false; }
+            else if (lower.contains("villager") || lower.contains("trader") || lower.contains("merchant")) { category = "trader"; interactable = true; }
+            else { category = "passive"; interactable = false; }
+            mob.addProperty("category", category);
+            mob.addProperty("interactable", interactable);
+            Vec3d ev = entity.getVelocity();
+            mob.addProperty("vx", Math.round(ev.x * 100) / 100.0);
+            mob.addProperty("vz", Math.round(ev.z * 100) / 100.0);
             mob.addProperty("health", Math.round(((LivingEntity) entity).getHealth() * 10) / 10.0);
+            // 村民职业 / 年龄 / 是否可交易：未转职(NONE)或幼年村民右键不会打开交易界面
+            if (entity instanceof VillagerEntity ve) {
+                VillagerProfession prof = ve.getVillagerData().getProfession();
+                mob.addProperty("profession", Registries.VILLAGER_PROFESSION.getId(prof).toString());
+                mob.addProperty("baby", ve.isBaby());
+                mob.addProperty("tradable", !ve.isBaby() && prof != VillagerProfession.NONE);
+            }
+            // 通用实体 NBT 画像：容错抽取关键字段，缺失键自动跳过
+            mob.add("nbt", extractNbtProfile(entity));
             mobs.add(mob);
         }
         state.add("nearby_mobs", mobs);
@@ -167,10 +222,16 @@ public class GameDataCollector {
                     double d = Math.sqrt(dx*dx + dy*dy + dz*dz);
                     if (d > 5.0) continue;
                     JsonObject b = new JsonObject();
+                    String blockId = Registries.BLOCK.getId(bs.getBlock()).toString();
+                    String passKind = blockPassKind(blockId);
                     b.addProperty("x", bp.getX());
                     b.addProperty("y", bp.getY());
                     b.addProperty("z", bp.getZ());
-                    b.addProperty("name", Registries.BLOCK.getId(bs.getBlock()).toString());
+                    b.addProperty("name", blockId);
+                    b.addProperty("solid", !bs.getCollisionShape(mc.world, bp).isEmpty());
+                    b.addProperty("kind", passKind);
+                    b.addProperty("openable", passKind.equals("door") || passKind.equals("fence_gate") || passKind.equals("trapdoor"));
+                    if (bs.contains(Properties.OPEN)) b.addProperty("open", bs.get(Properties.OPEN));
                     reachBlocks.add(b);
                 }
             }
@@ -181,10 +242,79 @@ public class GameDataCollector {
         state.add("inventory", readInventory(mc));
         state.addProperty("selected_slot", mc.player.getInventory().selectedSlot);
 
+        // 当前打开的界面 / 容器槽位（行为层判断交易/合成状态用）
+        JsonObject screenJson = new JsonObject();
+        var handler = mc.player.currentScreenHandler;
+        screenJson.addProperty("open", mc.currentScreen != null);
+        screenJson.addProperty("handler", handler.getClass().getSimpleName());
+        JsonArray screenSlots = new JsonArray();
+        for (int i = 0; i < handler.slots.size(); i++) {
+            Slot s = handler.slots.get(i);
+            ItemStack st = s.getStack();
+            if (st.isEmpty()) continue;
+            JsonObject so = new JsonObject();
+            so.addProperty("slot", i);
+            so.addProperty("id", Registries.ITEM.getId(st.getItem()).toString());
+            so.addProperty("count", st.getCount());
+            screenSlots.add(so);
+        }
+        screenJson.add("slots", screenSlots);
+        state.add("screen", screenJson);
+
         state.addProperty("time_of_day", mc.world.getTimeOfDay());
         state.addProperty("is_day", mc.world.isDay());
 
         return state;
+    }
+
+    /**
+     * 方块通行分类：door/fence_gate/trapdoor 可开合通过；fence/bars 为硬阻挡；其余 solid。
+     */
+    private static String blockPassKind(String id) {
+        if (id.endsWith("_door")) return "door";
+        if (id.endsWith("_fence_gate")) return "fence_gate";
+        if (id.endsWith("_trapdoor")) return "trapdoor";
+        if (id.endsWith("_fence")) return "fence";
+        if (id.endsWith("_bars")) return "bars";
+        return "solid";
+    }
+
+    /**
+     * 视线遮挡检测：从玩家眼睛到目标眼睛做碰撞体射线，返回命中的遮挡方块 id；无遮挡返回 null。
+     */
+    private static String lineOfSightBlocker(MinecraftClient mc, PlayerEntity player, Entity target) {
+        Vec3d from = player.getEyePos();
+        Vec3d to = target.getEyePos();
+        BlockHitResult hit = mc.world.raycast(new RaycastContext(from, to,
+                RaycastContext.ShapeType.COLLIDER, RaycastContext.FluidHandling.NONE, player));
+        if (hit.getType() == HitResult.Type.MISS) return null;
+        BlockState bs = mc.world.getBlockState(hit.getBlockPos());
+        return Registries.BLOCK.getId(bs.getBlock()).toString();
+    }
+
+    /**
+     * 抽取实体 NBT 关键画像字段（容错，缺失/不可读字段自动跳过）。
+     * 覆盖：命名、年龄、村民职业/类型/等级、可用交易项数。
+     */
+    private static JsonObject extractNbtProfile(Entity entity) {
+        JsonObject out = new JsonObject();
+        try {
+            NbtCompound nbt = entity.writeNbt(new NbtCompound());
+            if (nbt.contains("CustomName")) out.addProperty("custom_name", nbt.getString("CustomName"));
+            if (nbt.contains("Age")) out.addProperty("age", nbt.getInt("Age"));
+            if (nbt.contains("VillagerData")) {
+                NbtCompound vd = nbt.getCompound("VillagerData");
+                if (vd.contains("profession")) out.addProperty("profession", vd.getString("profession"));
+                if (vd.contains("type")) out.addProperty("type", vd.getString("type"));
+                if (vd.contains("level")) out.addProperty("level", vd.getInt("level"));
+            }
+            if (nbt.contains("Offers")) {
+                NbtCompound offers = nbt.getCompound("Offers");
+                out.addProperty("offer_count", offers.getList("Recipes", 10).size());
+            }
+        } catch (Exception ignored) {
+        }
+        return out;
     }
 
     private static JsonArray readInventory(MinecraftClient mc) {
@@ -322,7 +452,20 @@ public class GameDataCollector {
                     if (e.getId() == eid) {
                         double dx = e.getX() - mc.player.getX();
                         double dz = e.getZ() - mc.player.getZ();
-                        double dy = e.getY() - mc.player.getEyeY();
+                        double dy = e.getEyeY() - mc.player.getEyeY();
+                        double dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+                        if (dist > 3.5) {
+                            return false; // 距离过远，需先走近
+                        }
+                        // 视线遮挡校验：眼睛到实体眼睛之间若先命中方块，视为被挡住
+                        Vec3d eye = mc.player.getEyePos();
+                        Vec3d eyeTarget = e.getEyePos();
+                        BlockHitResult blockHit = mc.world.raycast(new RaycastContext(
+                                eye, eyeTarget, RaycastContext.ShapeType.COLLIDER,
+                                RaycastContext.FluidHandling.NONE, mc.player));
+                        if (blockHit.getType() != HitResult.Type.MISS) {
+                            return false; // 被方块/墙体挡住视线
+                        }
                         mc.player.setYaw((float) Math.toDegrees(Math.atan2(-dx, dz)));
                         mc.player.setPitch((float) -Math.toDegrees(Math.atan2(dy, Math.sqrt(dx*dx + dz*dz))));
                         mc.interactionManager.interactEntityAtLocation(mc.player, e, new net.minecraft.util.hit.EntityHitResult(e, e.getPos()), Hand.MAIN_HAND);
@@ -440,7 +583,16 @@ public class GameDataCollector {
                 return true;
             }
             case "fly": {
-                mc.player.getAbilities().flying = !mc.player.getAbilities().flying;
+                boolean on;
+                if (params != null && params.has("on")) {
+                    on = params.get("on").getAsBoolean();
+                } else {
+                    on = !mc.player.getAbilities().flying;
+                }
+                mc.player.getAbilities().allowFlying = true;
+                mc.player.getAbilities().flying = on;
+                mc.player.sendAbilitiesUpdate();
+                PlayerController.setFlyMode(on);
                 return true;
             }
             case "fly_speed": {

@@ -12,11 +12,16 @@ import java.util.List;
 
 /**
  * EnderCore 配置 GUI — 整页可滚动大列表，内嵌动作文件子列表
+ * LLM 接入参数（Base URL / API Key / 模型 / 决策间隔）在此界面填写，保存到本地配置，不打包进 mod。
  */
 public class ConfigScreen extends Screen {
     private final Screen parent;
-    private TextFieldWidget portField;
     private TextFieldWidget hostField;
+    private TextFieldWidget portField;
+    private TextFieldWidget urlField;
+    private TextFieldWidget keyField;
+    private TextFieldWidget modelField;
+    private TextFieldWidget intervalField;
     private ButtonWidget saveBtn, closeBtn, delBtn, openBtn, refreshBtn;
 
     private final List<String> modelNames = new ArrayList<>();
@@ -28,16 +33,20 @@ public class ConfigScreen extends Screen {
     private static final int BOX_W = 300;
     private static final int FIELD_W = 200;
     private static final int ROW_H = 12;
-    private static final int LIST_H = 120;
+    private static final int LIST_H = 110;
 
     // 虚拟内容坐标
     private static final int Y_HOST_FLD = 32;
     private static final int Y_PORT_FLD = 62;
-    private static final int Y_BTNS1 = 82;
-    private static final int Y_LIST_BOX = 120;
-    private static final int Y_BTNS2 = 244;
-    private static final int Y_DROP = 262;
-    private static final int CONTENT_H = 290;
+    private static final int Y_URL_FLD = 92;
+    private static final int Y_KEY_FLD = 122;
+    private static final int Y_MODEL_FLD = 152;
+    private static final int Y_INTERVAL_FLD = 182;
+    private static final int Y_BTNS1 = 202;
+    private static final int Y_LIST_BOX = 236;
+    private static final int Y_BTNS2 = 352;
+    private static final int Y_DROP = 370;
+    private static final int CONTENT_H = 400;
 
     public ConfigScreen(Screen parent) {
         super(Text.literal("EnderCore 配置"));
@@ -58,6 +67,26 @@ public class ConfigScreen extends Screen {
         this.portField.setMaxLength(8);
         this.portField.setText(String.valueOf(Config.get().http_port));
         this.addDrawableChild(this.portField);
+
+        this.urlField = new TextFieldWidget(this.textRenderer, fx, 0, FIELD_W, 14, Text.literal("LLM Base URL"));
+        this.urlField.setMaxLength(200);
+        this.urlField.setText(Config.get().llm_base_url);
+        this.addDrawableChild(this.urlField);
+
+        this.keyField = new TextFieldWidget(this.textRenderer, fx, 0, FIELD_W, 14, Text.literal("LLM API Key"));
+        this.keyField.setMaxLength(300);
+        this.keyField.setText(Config.get().llm_api_key);
+        this.addDrawableChild(this.keyField);
+
+        this.modelField = new TextFieldWidget(this.textRenderer, fx, 0, FIELD_W, 14, Text.literal("LLM Model"));
+        this.modelField.setMaxLength(100);
+        this.modelField.setText(Config.get().llm_model);
+        this.addDrawableChild(this.modelField);
+
+        this.intervalField = new TextFieldWidget(this.textRenderer, fx, 0, FIELD_W, 14, Text.literal("Decision Interval (s)"));
+        this.intervalField.setMaxLength(8);
+        this.intervalField.setText(String.valueOf(Config.get().llm_decision_interval_sec));
+        this.addDrawableChild(this.intervalField);
 
         refreshList();
 
@@ -81,6 +110,10 @@ public class ConfigScreen extends Screen {
         int fx = cx - FIELD_W / 2;
         hostField.setX(fx); hostField.setY(Y_HOST_FLD - masterScroll);
         portField.setX(fx); portField.setY(Y_PORT_FLD - masterScroll);
+        urlField.setX(fx); urlField.setY(Y_URL_FLD - masterScroll);
+        keyField.setX(fx); keyField.setY(Y_KEY_FLD - masterScroll);
+        modelField.setX(fx); modelField.setY(Y_MODEL_FLD - masterScroll);
+        intervalField.setX(fx); intervalField.setY(Y_INTERVAL_FLD - masterScroll);
         saveBtn.setX(fx); saveBtn.setY(Y_BTNS1 - masterScroll);
         closeBtn.setX(fx + 105); closeBtn.setY(Y_BTNS1 - masterScroll);
         delBtn.setX(BOX_X); delBtn.setY(Y_BTNS2 - masterScroll);
@@ -112,10 +145,20 @@ public class ConfigScreen extends Screen {
     }
 
     private void save() {
-        try { Config.get().http_port = Integer.parseInt(this.portField.getText().trim()); }
-        catch (NumberFormatException e) { Config.get().http_port = 25599; }
-        Config.get().http_host = this.hostField.getText().trim();
-        if (Config.get().http_host.isEmpty()) Config.get().http_host = "127.0.0.1";
+        Config.Data c = Config.get();
+        try { c.http_port = Integer.parseInt(this.portField.getText().trim()); }
+        catch (NumberFormatException e) { c.http_port = 25599; }
+        c.http_host = this.hostField.getText().trim();
+        if (c.http_host.isEmpty()) c.http_host = "127.0.0.1";
+
+        String url = this.urlField.getText().trim();
+        if (!url.isEmpty()) c.llm_base_url = url;
+        c.llm_api_key = this.keyField.getText().trim();
+        String model = this.modelField.getText().trim();
+        if (!model.isEmpty()) c.llm_model = model;
+        try { c.llm_decision_interval_sec = Double.parseDouble(this.intervalField.getText().trim()); }
+        catch (NumberFormatException e) { c.llm_decision_interval_sec = 2.5; }
+
         Config.save();
         close();
     }
@@ -166,11 +209,15 @@ public class ConfigScreen extends Screen {
         // 标签
         context.drawTextWithShadow(this.textRenderer, Text.literal("HTTP 主机:"), BOX_X, 22 + oy, 0xAAAAAA);
         context.drawTextWithShadow(this.textRenderer, Text.literal("HTTP 端口:"), BOX_X, 52 + oy, 0xAAAAAA);
+        context.drawTextWithShadow(this.textRenderer, Text.literal("LLM 接口地址:"), BOX_X, 82 + oy, 0xAAAAAA);
+        context.drawTextWithShadow(this.textRenderer, Text.literal("LLM API Key:"), BOX_X, 112 + oy, 0xAAAAAA);
+        context.drawTextWithShadow(this.textRenderer, Text.literal("LLM 模型:"), BOX_X, 142 + oy, 0xAAAAAA);
+        context.drawTextWithShadow(this.textRenderer, Text.literal("决策间隔(秒):"), BOX_X, 172 + oy, 0xAAAAAA);
 
         // 动作列表标题
         context.drawTextWithShadow(this.textRenderer,
             Text.literal("§e已加载动作 (" + modelNames.size() + ")"),
-            BOX_X, 108 + oy, 0xFFFF55);
+            BOX_X, 224 + oy, 0xFFFF55);
 
         // 子列表框
         int ly = Y_LIST_BOX + oy;

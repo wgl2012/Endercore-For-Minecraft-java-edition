@@ -1,6 +1,6 @@
 {
-    "llm_decision_interval_sec":  2.5,
-    "llm_api_key":  "YOUR_API_KEY_HERE",
-    "llm_model":  "deepseek-v4-flash",
-    "llm_base_url":  "https://api.ginka.cloud/v1"
+  "llm_base_url": "https://api.ginka.cloud/v1",
+  "llm_api_key": "YOUR_API_KEY_HERE",
+  "llm_model": "deepseek-v4-flash",
+  "llm_decision_interval_sec": 2.5
 }
